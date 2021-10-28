@@ -29,11 +29,11 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import griddata
 
 
-from layers import MLP, modified_MLP, FF_MLP
+# from layers import MLP, modified_MLP, FF_MLP
 
 
-from DataGenerator import DataGenerator
-from model import DeepONetPI
+# from DataGenerator import DataGenerator
+# from model import DeepONetPI
 
 def timing(f):
     """Decorator for measuring the execution time of methods."""
