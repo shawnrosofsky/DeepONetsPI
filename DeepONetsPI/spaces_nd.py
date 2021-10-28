@@ -14,11 +14,15 @@ from jax.ops import index, index_add, index_update, index_mul
 from pandas.core import indexing
 from pathos.pools import ProcessPool
 from scipy import linalg, interpolate
+import scipy.sparse as ssp
+from scipy.special import gamma
+import scipy as sci
+
 from sklearn import gaussian_process as gp
 from scipy.interpolate import griddata
 import matplotlib.pyplot as plt
 import config
-from utils import eig
+# from utils import eig
 from IPython.display import display
 import time
 
@@ -34,7 +38,15 @@ def RBF(x1, x2, output_scale, lengthscales):
 def construct_points(grid):
     N = grid[0].size
     dim = len(grid)
-    R = jax.zeros((N, dim))
+    R = np.zeros((N, dim))
+    for i in range(dim):
+        R[:,i] = grid[i].ravel()
+    return R
+
+def construct_points_jax(grid):
+    N = grid[0].size
+    dim = len(grid)
+    R = jnp.zeros((N, dim))
     for i in range(dim):
         R[:,i] = grid[i].ravel()
     return R
@@ -42,33 +54,26 @@ def construct_points(grid):
 def construct_grid(points,values,shape):
     N = points.shape[0]
     dim = points.shape[1]
-    grid = (points[:,i].reshape(shape) for i in range(dim))
+    grid = tuple(points[:,i].reshape(shape) for i in range(dim))
     vals = values.reshape(shape)
     return grid, vals
 
-def construct_points_jax(grid):
-    N = grid[0].size
-    dim = len(grid)
-    R = jnp.zeros((N, dim))
-    for i in range(dim):
-        R[:, i] = grid[i].ravel()
-    return R
 
 def construct_grid_jax(points,values,shape):
     N = points.shape[0]
     dim = points.shape[1]
-    grid = (points[:,i].reshape(shape) for i in range(dim))
+    grid = tuple(points[:,i].reshape(shape) for i in range(dim))
     vals = values.reshape(shape)
     return grid, vals
 
 class GRF_nd(object):
-    def __init__(self, T, dim=1, kernel="RBF", length_scale=1, N=1000, interp="cubic"):
+    def __init__(self, T, dim=1, length_scale=1, N=1000, interp="cubic", kernel="RBF", nu=0.5):
         self.interp = interp
         self.dim = dim
         # if N.isdigit():
         if not isinstance(N, (list, tuple)):
             N = np.array([N]*dim)
-        if not isinstance(N, (list, tuple)):
+        if not isinstance(T, (list, tuple)):
             T = np.array([T]*dim)
         self.N = N
         self.T = T
@@ -85,10 +90,10 @@ class GRF_nd(object):
         if kernel == "RBF":
             K = gp.kernels.RBF(length_scale=length_scale)
         elif kernel == "AE":
-            K = gp.kernels.Matern(length_scale=length_scale, nu=0.5)
+            K = gp.kernels.Matern(length_scale=length_scale, nu=nu)
         self.K = K(self.x)
         self.L = np.linalg.cholesky(self.K + 1e-13 * np.eye(self.Ntot))
-    
+        # self.L = np.linalg.cholesky(self.K + 1e-13 * ssp.eye(self.Ntot))
     def random(self, n):
         """Generate `n` random feature vectors.
         """
@@ -127,7 +132,7 @@ class GRF_nd(object):
 
 class GRF_nd_jax(object):
     # Need to perform GRF as float64 otherwise cholesky fails with matrix not positive definite
-    def __init__(self, T, dim=1, kernel="RBF", length_scale=1, N=1000, interp="cubic"):
+    def __init__(self, T, dim=1, kernel="RBF", length_scale=1.0, N=1000, interp="cubic"):
         self.interp = interp
         self.dim = dim
         # if N.isdigit():
@@ -154,7 +159,7 @@ class GRF_nd_jax(object):
         elif kernel == "AE":
             K = gp.kernels.Matern(length_scale=length_scale, nu=0.5)
         self.K = K(self.x)
-        self.L = np.linalg.cholesky(self.K + 1e-13 * jnp.eye(self.Ntot))
+        self.L = jnp.linalg.cholesky(self.K + 1e-13 * jnp.eye(self.Ntot))
         # space.K + 1e-13 * jnp.eye(space.Ntot)
         
     def random(self, n, key=jax.random.PRNGKey(0)):
@@ -191,8 +196,9 @@ class GRF_nd_jax(object):
         points = jnp.float32(self.x)
         point_values = jnp.float32(ys)
         sensors = jnp.float32(sensors)
-        p = ProcessPool(nodes=config.processes)
-        res = p.map(lambda y: griddata(points, y, sensors, method=self.interp), point_values)
+        # p = ProcessPool(nodes=config.processes)
+        # res = p.map(lambda y: griddata(points, y, sensors, method=self.interp), point_values)
+        res = pmap(lambda y: griddata(points, y, sensors, method=self.interp))(point_values)
         #  (   lambda y: interpolate.interp1d(
         #         jnp.ravel(self.x), y, kind=self.interp, copy=False, assume_sorted=True
         #     )(sensors).T,
@@ -212,7 +218,7 @@ if __name__ == "__main__":
     num = 1
     interp = 'linear' # cubic
     N = 100
-    length_scale = 0.05
+    length_scale = 0.2
     
     start = time.time()
     space = GRF_nd(1, dim=2, length_scale=length_scale, N=N, interp=interp)
