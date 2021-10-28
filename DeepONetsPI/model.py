@@ -71,7 +71,11 @@ class DeepONetPI:
         self.opt_init, self.opt_update, self.get_params = optimizer
         self.opt_state = self.opt_init(params)
 
+        # Initialize itercounter
         self.itercount = itertools.count()
+        
+        # Get Number of coordinate dimensions
+        self.dim = trunk_layers[0]
         
          # Used to restore the trained model parameters
         _, self.unravel_params = ravel_pytree(params)
