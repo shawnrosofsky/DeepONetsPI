@@ -51,7 +51,7 @@ def MLP(layers, activation=relu):
 
 class FlaxMLP(nn.Module):
     layers: Sequence[int]
-    activation: Callable = relu
+    activation: Callable[[jnp.ndarray], jnp.ndarray] = relu
     
     @nn.compact
     def __call__(self, inputs):
@@ -61,7 +61,6 @@ class FlaxMLP(nn.Module):
             if i != len(self.layers) - 1:
                 x = self.activation(x)
         return x
-            
     
 
 # Define modified MLP
@@ -98,7 +97,7 @@ def modified_MLP(layers, activation=relu):
 
 class FlaxModifiedMLP(nn.Module):
     layers: Sequence[int]
-    activation: Callable = relu
+    activation: Callable[[jnp.ndarray], jnp.ndarray] = relu
     
     @nn.compact
     def __call__(self, inputs):
@@ -140,33 +139,38 @@ def FF_MLP(layers, freqs=50, activation=relu):
         return outputs
     return init, apply
 
-# # Define Fourier feature net using Flax
-# class FlaskFFMLP(nn.Module):
-#     layers: Sequence[int]
-#     freqs: int = 50
-#     activation: Callable = relu
-#     # Define input encoding function
-#     def input_encoding(x, w):
-#         out = jnp.hstack([jnp.sin(jnp.dot(x, w)),
-#                          jnp.cos(jnp.dot(x, w))])
-#         return out
-#     FF = freqs * random.normal(random.PRNGKey(0), (layers[0], layers[1]//2))
-#     def init(rng_key):
-#       def init_layer(key, d_in, d_out):
-#           k1, k2 = random.split(key)
-#           glorot_stddev = 1. / jnp.sqrt((d_in + d_out) / 2.)
-#           W = glorot_stddev * random.normal(k1, (d_in, d_out))
-#           b = jnp.zeros(d_out)
-#           return W, b
-#       key, *keys = random.split(rng_key, len(layers))
-#       params = list(map(init_layer, keys, layers[1:-1], layers[2:]))
-#       return params
-#     def apply(params, inputs):
-#         H = input_encoding(inputs, FF)
-#         for W, b in params[:-1]:
-#             outputs = jnp.dot(H, W) + b
-#             H = activation(outputs)
-#         W, b = params[-1]
-#         outputs = jnp.dot(H, W) + b
-#         return outputs
-#     return init, apply
+# Define Fourier feature net using Flax
+class FlaskFFMLP(nn.Module):
+    layers: Sequence[int]
+    freqs: int = 50
+    activation: Callable[[jnp.ndarray], jnp.ndarray] = relu
+    
+    def setup(self):
+        self.FF = self.freqs * random.normal(random.PRNGKey(0), (self.layers[0], self.layers[1]//2))
+
+    # def init(rng_key):
+    #   def init_layer(key, d_in, d_out):
+    #       k1, k2 = random.split(key)
+    #       glorot_stddev = 1. / jnp.sqrt((d_in + d_out) / 2.)
+    #       W = glorot_stddev * random.normal(k1, (d_in, d_out))
+    #       b = jnp.zeros(d_out)
+    #       return W, b
+    #   key, *keys = random.split(rng_key, len(self.layers))
+    #   params = list(map(init_layer, keys, self.layers[1:-1], self.layers[2:]))
+    #   return params
+    
+    
+    def __call__(self, inputs):
+        x = self.input_encoding(inputs, self.FF)
+        for i, layer in enumerate(self.layers):
+            x = nn.Dense(layer, name=f'layers_{i}')(x)
+            if i != len(self.layers) - 1:
+                x = self.activation(x)
+        outputs = x
+        return outputs
+    
+    # Define input encoding function
+    def input_encoding(self, x, w):
+        out = jnp.hstack([jnp.sin(jnp.dot(x, w)),
+                         jnp.cos(jnp.dot(x, w))])
+        return out
