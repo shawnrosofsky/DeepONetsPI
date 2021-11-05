@@ -46,7 +46,7 @@ def RBF(x1, x2, output_scale, lengthscales):
     return output_scale * jnp.exp(-0.5 * r2)
 
 
-def dirichlet_mattern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=1.5):
+def dirichlet_mattern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=jnp.inf):
     # do even only 
     d = x1.shape[1]
     if Nk is None:
@@ -91,7 +91,7 @@ def dirichlet_mattern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=1.5):
     return cov
     
     
-def neumann_mattern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=1.5):
+def neumann_mattern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=jnp.inf):
     # do even only 
     d = x1.shape[1]
     d = x1.shape[1]
@@ -143,7 +143,7 @@ def neumann_mattern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=1.5):
     
     
     
-def periodic_mattern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=1.5):
+def periodic_mattern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=jnp.inf):
     d = x1.shape[1]
     L = x1[-1] - x1[0]
     if Nk is None:
@@ -161,7 +161,7 @@ def periodic_mattern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=1.5):
     k_grid = jnp.meshgrid(*k, indexing='ij')
     
     K = jnp.zeros((N_tot, d))
-    ones = jnp.ones((N))
+    ones = jnp.ones((Nk))
     a = [ones*a1[i] for i in range(d)]
     a = [a[i].at[0].set(a0[i]) for i in range(d)]
     a_grid = jnp.meshgrid(*a, indexing='ij')
@@ -194,3 +194,67 @@ def periodic_mattern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=1.5):
     return cov
     
     
+def get_cholesky(K, jitter=1e-12):
+    N = K.shape[0]
+    L = jnp.linalg.cholesky(K + jitter*jnp.eye(N))
+    return L
+
+def setup_kernel(N, dim):
+    # dim = 2
+    # N = 100
+    N_full = jnp.array([N]*dim)
+    Ntot = jnp.prod(N_full)
+    x = [jnp.linspace(0, 1, N) for i in range(dim)]
+    grid = jnp.meshgrid(*x, indexing='ij')
+    X = jnp.zeros((Ntot, dim))
+    for i in range(dim):
+        X = X.at[:,i].set(grid[i].ravel())
+    return X
+
+def generate_sample(key, L):
+    N = L.shape[0]
+    rand = random.normal(key, (N,))
+    sample = jnp.dot(L, rand).T
+    return sample
+
+
+def generate_samples(key, L, Nsamples):
+    keys = random.split(key, Nsamples)
+    samples = vmap(generate_sample, (0, None))(keys, L)
+    return samples
+
+def plot_sample(sample, dim, shape):
+    fig = plt.figure()
+    if dim == 2:
+        grid, U = construct_grid(X, sample, shape=shape)
+        X1, X2 = grid
+        c = plt.pcolormesh(X1, X2, U, cmap='jet', shading='gouraud', vmin=-2, vmax=2)
+        fig.colorbar(c)
+        plt.title('GRF Jax')
+        plt.axis('square')
+    elif dim == 1:
+        plt.plot(X, sample)
+    plt.show()
+    return U
+
+if __name__ == "__main__":
+    jax.config.update("jax_enable_x64", True)
+    key = random.PRNGKey(0)
+    dim = 2
+    N = 101
+    l = 0.1
+    Nk = 25
+    Nsamples = 10
+    jitter = 1e-12
+    shape = jnp.array([N]*dim)
+    X = setup_kernel(N, dim)
+    print(f"X={X}")
+    K = periodic_mattern(X, Nk=Nk, l=l, nu=jnp.inf)
+    print(f"K={K}")
+    L = get_cholesky(K, jitter)
+    print(f"L={L}")
+    jax.config.update("jax_enable_x64", False)
+    samples = generate_samples(key, L, Nsamples)
+    print(samples.shape)
+    plt.close('all')
+    U = jnp.array([plot_sample(sample, dim, shape) for sample in samples])
