@@ -223,7 +223,7 @@ def generate_samples(key, L, Nsamples):
     samples = vmap(generate_sample, (0, None))(keys, L)
     return samples
 
-def plot_sample(sample, dim, shape):
+def plot_sample(X, sample, dim, shape):
     fig = plt.figure()
     if dim == 2:
         grid, U = construct_grid(X, sample, shape=shape)
@@ -257,4 +257,4 @@ if __name__ == "__main__":
     samples = generate_samples(key, L, Nsamples)
     print(samples.shape)
     plt.close('all')
-    U = jnp.array([plot_sample(sample, dim, shape) for sample in samples])
+    U = jnp.array([plot_sample(X, sample, dim, shape) for sample in samples])
