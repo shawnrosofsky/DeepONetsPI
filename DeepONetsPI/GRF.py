@@ -46,7 +46,7 @@ def RBF(x1, x2, output_scale, lengthscales):
     return output_scale * jnp.exp(-0.5 * r2)
 
 
-def dirichlet_mattern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=jnp.inf):
+def dirichlet_matern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=jnp.inf):
     # do even only 
     d = x1.shape[1]
     if Nk is None:
@@ -91,7 +91,7 @@ def dirichlet_mattern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=jnp.inf):
     return cov
     
     
-def neumann_mattern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=jnp.inf):
+def neumann_matern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=jnp.inf):
     # do even only 
     d = x1.shape[1]
     d = x1.shape[1]
@@ -143,7 +143,7 @@ def neumann_mattern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=jnp.inf):
     
     
     
-def periodic_mattern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=jnp.inf):
+def periodic_matern(x1, x2=None, Nk=None, l=0.1, sigma=1.0, nu=jnp.inf):
     d = x1.shape[1]
     L = x1[-1] - x1[0]
     if Nk is None:
@@ -249,7 +249,7 @@ if __name__ == "__main__":
     shape = jnp.array([N]*dim)
     X = setup_kernel(N, dim)
     print(f"X={X}")
-    K = periodic_mattern(X, Nk=Nk, l=l, nu=jnp.inf)
+    K = periodic_matern(X, Nk=Nk, l=l, nu=jnp.inf)
     print(f"K={K}")
     L = get_cholesky(K, jitter)
     print(f"L={L}")
