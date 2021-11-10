@@ -47,11 +47,12 @@ class DeepONetPI:
                  ics_loss_const=1.0,
                  ckpt_dir='DeepONetPI',
                  ckpt_file='params.npy',
+                 it_file='iterations.npy',
                  loss_file='loss.npy',
                  loss_operator_file='loss_operator.npy',
                  loss_physics_file='loss_physics.npy',
                  loss_bcs_file='loss_bcs.npy',
-                 loss_ics_file='loss_ics.npy',      
+                 loss_ics_file='loss_ics.npy',
                  ):
         # Network initialization and evaluation functions
         # These are reserved for the flax case
@@ -73,6 +74,7 @@ class DeepONetPI:
 
         # Initialize itercounter
         self.itercount = itertools.count()
+        self.it = 0
         
         # Get Number of coordinate dimensions
         self.dim = trunk_layers[0]
@@ -97,6 +99,7 @@ class DeepONetPI:
         # Checkpointing file names
         self.ckpt_dir = ckpt_dir
         self.ckpt_path = os.path.join(self.ckpt_dir, ckpt_file)
+        self.it_path = os.path.join(self.ckpt_dir, it_file)
         self.loss_path = os.path.join(self.ckpt_dir, loss_file)
         self.loss_operator_path = os.path.join(self.ckpt_dir, loss_operator_file)
         self.loss_physics_path = os.path.join(self.ckpt_dir, loss_physics_file)
@@ -221,11 +224,26 @@ class DeepONetPI:
               physics_val_dataset=None,
               bcs_val_dataset=None,
               ics_val_dataset=None,
+              operator_loss_const=None,
+              physics_loss_const=None,
+              bcs_loss_const=None,
+              ics_loss_const=None,
               nIter=10000, 
               log_freq=10, 
               val_freq=10,
               ckpt_freq=1000,
               history_freq=1000):
+        
+        # Update loss constants if desired
+        if operator_loss_const is not None:
+            self.operator_loss_const = operator_loss_const
+        if physics_loss_const is not None:
+            self.physics_loss_const = physics_loss_const
+        if bcs_loss_const is not None:
+            self.bcs_loss_const = bcs_loss_const
+        if ics_loss_const is not None:
+            self.ics_loss_const = ics_loss_const
+            
         # Define the data iterator
         operator_data = physics_data = ics_data = bcs_data = None
         if operator_dataset is not None:
@@ -249,8 +267,9 @@ class DeepONetPI:
                 bcs_batch = next(bcs_data)
             if ics_data is not None:
                 ics_batch = next(ics_data)
-                
-            self.opt_state = self.step(next(self.itercount), self.opt_state, operator_batch, physics_batch, bcs_batch, ics_batch)
+            # current iteration including past training
+            self.it = next(self.itercount)
+            self.opt_state = self.step(self.it, self.opt_state, operator_batch, physics_batch, bcs_batch, ics_batch)
             
             if (log_freq != 0) and (it % log_freq == 0):
                 params = self.get_params(self.opt_state)
@@ -279,19 +298,19 @@ class DeepONetPI:
                 # Store losses
                 loss_dict = {} # for printing losses in pbar
                 if loss_value is not None:
-                    self.loss_log.append(loss_value)
+                    self.loss_log.append([self.it, loss_value])
                     loss_dict['loss'] = loss_value                    
                 if loss_operator_value is not None:
-                    self.loss_operator_log.append(loss_operator_value)
+                    self.loss_operator_log.append([self.it, loss_operator_value])
                     loss_dict['loss_operator'] = loss_operator_value
                 if loss_physics_value is not None:
-                    self.loss_physics_log.append(loss_physics_value)
+                    self.loss_physics_log.append([self.it, loss_physics_value])
                     loss_dict['loss_physics'] = loss_physics_value
                 if loss_bcs_value is not None:
-                    self.loss_bcs_log.append(loss_bcs_value)
+                    self.loss_bcs_log.append([self.it, loss_bcs_value])
                     loss_dict['loss_bcs'] = loss_bcs_value
                 if loss_ics_value is not None:
-                    self.loss_ics_log.append(loss_ics_value)
+                    self.loss_ics_log.append([self.it, loss_ics_value])
                     loss_dict['loss_ics'] = loss_ics_value
 
                 # Print losses during training
@@ -299,32 +318,45 @@ class DeepONetPI:
             
             if (ckpt_freq != 0) and (it % ckpt_freq == 0):
                 # may want to add an iteration number to ckpt_path in future
-                self.save(ckpt_path=self.ckpt_path)
+                self.save(ckpt_path=self.ckpt_path, it_path=self.it_path)
                 
             if (history_freq != 0) and (it % history_freq == 0):
                 # may want to add an itteration number to the loss logs in future
                 self.save_history()
                 
-    def save(self, ckpt_path=None):
+    def save(self, ckpt_path=None, it_path=None):
         if ckpt_path is None:
             ckpt_path = self.ckpt_path
+        if it_path is None:
+            it_path = self.it_path
         ckpt_dir = os.path.split(ckpt_path)[0]
         os.makedirs(ckpt_dir, exist_ok=True)
-        params = self.get_params(self.opt_state)
+        params = self.get_params(self.opt_state) 
         flat_params = flat_params, _  = ravel_pytree(params)
         jnp.save(ckpt_path, flat_params)
+        jnp.save(it_path, self.it)
         
-    def restore(self, ckpt_path=None):
+    def restore(self, ckpt_path=None, it_path=None):
         if ckpt_path is None:
             ckpt_path = self.ckpt_path
+        if it_path is None:
+            it_path = self.it_path
         try:
             flat_params = jnp.load(ckpt_path)
         except:
             print(f'Failed to load file {ckpt_path}')
             traceback.print_exc()
             return
+        try:
+            self.it = int(jnp.load(it_path))
+        except:
+            print(f'Failed to load file {it_path}')
+            traceback.print_exc()
         params = self.unravel_params(flat_params)
         self.opt_state = self.opt_init(params)
+        # note that we neet to initialize itercount value (initializes to current iteration, but we want next iteration for training)
+        self.itercount = itertools.count(self.it)
+        self.it = next(self.itercount)
 
     def save_history(self, loss_path=None, loss_operator_path=None, loss_physics_path=None, loss_bcs_path=None, loss_ics_path=None):
         if loss_path is None:
@@ -375,29 +407,32 @@ class DeepONetPI:
         # Try to load the loss files and add them to loss logs.  It is ok if they fail beacause the loss files might not exist.
         try:
             loss_log = jnp.load(loss_path)
-            self.loss_log = list(loss_log)
+            self.loss_log = list(list(l) for l in loss_log)
         except:
             print(f'Failed to load file {loss_path}')
         try:
             loss_operator_log = jnp.load(loss_operator_path)
-            self.loss_operator_log = list(loss_operator_log)
+            self.loss_operator_log = list(list(l) for l in loss_operator_log)
         except:
             print(f'Failed to load file {loss_operator_path}')
         try:
             loss_physics_log = jnp.load(loss_physics_path)
-            self.loss_physics_log = list(loss_physics_log)
+            self.loss_physics_log = list(list(l) for l in loss_physics_log)
         except:
             print(f'Failed to load file {loss_physics_path}')
         try:
             loss_bcs_log = jnp.load(loss_bcs_path)
-            self.loss_bcs_log = list(loss_bcs_log)
+            self.loss_bcs_log = list(list(l) for l in loss_bcs_log)
         except:
             print(f'Failed to load file {loss_bcs_path}')
         try:
             loss_ics_log = jnp.load(loss_ics_path)
-            self.loss_ics_log = list(loss_ics_log)
+            self.loss_ics_log = list(list(l) for l in loss_ics_log)
         except:
             print(f'Failed to load file {loss_ics_path}')
+        
+    def restart_counter(self, i=0):
+        self.itercount = itertools(i)
        
            
     # Evaluates predictions at test points  
