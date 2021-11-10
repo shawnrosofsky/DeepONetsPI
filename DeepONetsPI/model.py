@@ -63,8 +63,8 @@ class DeepONetPI:
         self.trunk_init, self.trunk_apply = trunk_net(trunk_layers, activation=trunk_activation)
 
         # Initialize
-        branch_params = self.branch_init(rng_key=random.PRNGKey(1234))
-        trunk_params = self.trunk_init(rng_key=random.PRNGKey(4321))
+        branch_params = self.branch_init(rng_key=branch_rng_key)
+        trunk_params = self.trunk_init(rng_key=trunk_rng_key)
         params = (branch_params, trunk_params)
 
         # Use optimizers to set optimizer initialization and update functions
